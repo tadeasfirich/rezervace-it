@@ -253,6 +253,23 @@ pre.out { background: var(--surface-2); border: 1px solid var(--line); border-ra
   @keyframes up { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
 }
 [hidden] { display: none !important; }
+
+/* více hodin najednou */
+.hours { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 6px; }
+.hr { display: flex; flex-direction: column; align-items: center; gap: 1px; min-height: 46px; padding: 4px 2px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.hr small { font-size: 11px; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hr[aria-pressed="true"] { background: var(--r, var(--accent)); border-color: var(--r, var(--accent)); color: #fff; }
+.hr[aria-pressed="true"] small { color: inherit; opacity: .85; }
+.hr[disabled] { cursor: not-allowed; background: var(--surface-2); opacity: .6; }
+.mrows { display: flex; flex-direction: column; gap: 4px; }
+.mrow { display: grid; grid-template-columns: 32px 100px 1fr; align-items: center; gap: 8px; min-height: 40px; padding: 6px 10px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; cursor: pointer; text-align: left; font-variant-numeric: tabular-nums; }
+.mrow small { color: var(--muted); }
+.mrow span { font-weight: 700; }
+.mrow span.empty { font-weight: 400; color: var(--muted); font-style: italic; }
+.mrow[aria-current="true"] { border: 2px solid var(--r, var(--accent)); background: var(--r-soft, var(--accent-soft)); color: var(--res-ink); }
+dialog:has(.dlg.wide) { width: min(720px, calc(100vw - 24px)); }
+table.t tr.wkend td { color: var(--muted); }
+code { background: var(--surface-2); padding: 0 4px; border-radius: 4px; font-size: 13px; }
 </style>
 <div class="top">
   <div class="wrap">
@@ -811,12 +828,64 @@ function openSlot(d, zid, h) {
     <div class="field"><label for="f-prijmeni">Kdo</label>${S.admin
       ? `<input type="text" id="f-prijmeni" name="prijmeni" value="${esc(r ? r.prijmeni : S.user.prijmeni)}" maxlength="40" required><span class="hint">Jako správce můžete zapsat i kolegu.</span>`
       : `<div class="who" id="f-prijmeni">${esc(S.user.prijmeni)}</div>`}</div>
-    ${chipsHtml(r ? r.trida : '')}
+    ${r ? '' : '<div class="field" id="f-hodiny"></div>'}
+    <div id="f-tridy">${chipsHtml(r ? r.trida : '')}</div>
     <div class="field"><label for="f-pozn">Poznámka (nemusí být)</label><input type="text" id="f-pozn" name="pozn" value="${esc(r ? r.poznamka : '')}" maxlength="40" placeholder="např. 12 ks, supluje…"></div>
     <p class="err" id="f-err" hidden></p>
     <div class="actions">${r ? `<button type="button" class="btn danger left" data-a="cancelRes" data-id="${esc(r.id)}">Zrušit rezervaci</button>` : ''}
       <button type="button" class="btn" data-a="close">Zavřít</button><button type="submit" class="btn primary">${r ? 'Uložit' : 'Zapsat'}</button></div>
   </form>`);
+  BM = r ? null : { d, z: zid, h0: h, multi: false, sel: [h], tridy: {}, active: h, when: $('#dlg .when').textContent };
+  renderHodiny();
+}
+
+/* ---------- více hodin najednou (jen nový zápis, jeden den, jedno zařízení) ---------- */
+let BM = null;
+const hodinTvar = n => (n === 1 ? 'hodina' : n >= 2 && n <= 4 ? 'hodiny' : 'hodin');
+const nextActive = () => BM.sel.find(h => !BM.tridy[h]) || null;
+function renderHodiny() {
+  const box = $('#f-hodiny');
+  if (!box || !BM) return;
+  const z = zar(BM.z);
+  $('#dlg .when').textContent = BM.multi ? `${z.nazev} · ${DNY[dow(BM.d)]} ${fmtDay(BM.d)} · ${BM.sel.length} ${hodinTvar(BM.sel.length)}` : BM.when;
+  if (!BM.multi) {
+    box.innerHTML = `<div class="bar"><button type="button" class="btn small" data-a="multiOn">+ Zapsat víc hodin tento den</button><span class="hint">Třeba celé dopoledne nebo celý den.</span></div>`;
+    return;
+  }
+  box.innerHTML = `<span class="lab">Které hodiny</span>
+    <div class="hours">${S.cfg.hodiny.map(x => {
+      const s = slotInfo(BM.d, BM.z, x.c, S.idx), free = s.kind === 'free';
+      const who = s.kind === 'res' ? s.r.prijmeni : s.kind === 'lock' ? s.rule.prijmeni : '';
+      return `<button type="button" class="hr" data-a="hourT" data-h="${x.c}" aria-pressed="${BM.sel.includes(x.c)}"${free ? '' : ' disabled'} aria-label="${x.c}. hodina${free ? '' : ', obsazeno: ' + esc(who)}"><b>${x.c}.</b><small>${free ? esc(x.od) : esc(who)}</small></button>`;
+    }).join('')}</div>
+    <div class="bar"><button type="button" class="btn small" data-a="hourAll">Vybrat všechny volné</button><button type="button" class="btn small ghost" data-a="multiOff">Zpět na jednu hodinu</button></div>`;
+  renderTridyM();
+}
+function renderTridyM() {
+  const box = $('#f-tridy');
+  box.innerHTML = `<div class="field"><span class="lab">Třída pro každou hodinu</span>
+    <div class="mrows">${BM.sel.map(h => `<button type="button" class="mrow" data-a="rowM" data-h="${h}" aria-current="${BM.active === h}"><b>${h}.</b><small>${esc(hod(h).od)}–${esc(hod(h).do)}</small><span${BM.tridy[h] ? '' : ' class="empty"'}>${BM.tridy[h] ? esc(BM.tridy[h]) : 'vyberte třídu'}</span></button>`).join('')}</div>
+    <p class="hint">${BM.active ? `Klikněte na třídu pro <b>${BM.active}. hodinu</b>, pak se posune na další.` : 'Všechny hodiny mají třídu. Změnu uděláte kliknutím na hodinu v seznamu.'}</p>
+    <div class="chips">${S.cfg.tridy.map(t => `<button type="button" class="chip" data-a="chipM">${esc(t)}</button>`).join('')}</div>
+    <div class="rowform"><div class="field"><input type="text" id="f-jina" maxlength="30" placeholder="Jiná skupina, např. kroužek" aria-label="Jiná skupina"></div><button type="button" class="btn" data-a="jinaM">Přiřadit</button></div></div>`;
+}
+async function bookMulti(f) {
+  const b = BM, z = zar(b.z);
+  const pozn = f.querySelector('#f-pozn').value.trim();
+  const pi = f.querySelector('input#f-prijmeni'), prijmeni = pi ? pi.value.trim() : S.user.prijmeni;
+  if (!prijmeni) return formErr(f, 'Doplňte příjmení.');
+  const miss = b.sel.filter(h => !b.tridy[h]);
+  if (miss.length) return formErr(f, `Doplňte třídu u ${miss.map(h => h + '.').join(', ')} hodiny.`);
+  const own = prijmeni === S.user.prijmeni, ok = [], bad = [];
+  f.querySelector('[type="submit"]').disabled = true;
+  for (const h of b.sel) {
+    try { await store.create(mkRes(b.d, b.z, h, prijmeni, b.tridy[h], pozn, own ? S.user.email : '', own ? S.user.jmeno : '')); ok.push(h); }
+    catch (e) { bad.push(e instanceof Conflict ? `${h}. (obsadil/a ${e.other.prijmeni})` : `${h}. (chyba spojení)`); if (!(e instanceof Conflict)) console.error(e); }
+  }
+  closeDlg();
+  await refresh(); render();
+  if (bad.length) toast(`Zapsáno ${ok.length} z ${b.sel.length}. Nepovedlo se: ${bad.join(', ')}.`, true);
+  else toast(`Zapsáno ${ok.length} ${hodinTvar(ok.length)}: ${z.nazev}, ${DNY[dow(b.d)].toLowerCase()} ${fmtDay(b.d)}`);
 }
 function formErr(form, msg) { const e = form.querySelector('#f-err'); e.textContent = msg; e.hidden = false; }
 function findRes(id) { for (const m in S.weeks) { const r = S.weeks[m].find(x => x.id === id); if (r) return r; } return null; }
@@ -933,16 +1002,88 @@ function openRule(zid, den, h, id) {
     <div class="actions">${x ? `<button type="button" class="btn danger left" data-a="delRule" data-id="${esc(x.id)}">Smazat</button>` : ''}<button type="button" class="btn" data-a="close">Zavřít</button><button type="submit" class="btn primary">Uložit</button></div>
   </form>`);
 }
+const fmtFull = s => `${fmtDay(s)} ${s.slice(0, 4)}`;
+function skolniRok() {
+  const t = todayISO(), y = Number(t.slice(5, 7)) >= 9 ? Number(t.slice(0, 4)) : Number(t.slice(0, 4)) - 1;
+  const svatky = [];
+  for (let d = `${y}-09-01`; d <= `${y + 1}-08-31`; d = addDays(d, 1)) if (svatek(d)) svatky.push(d);
+  return { y, svatky };
+}
 function nastVolno() {
-  const today = todayISO(), y = Number(today.slice(0, 4));
-  const sv = [];
-  for (let d = today; d <= `${y + 1}-08-31` && sv.length < 6; d = addDays(d, 1)) if (dow(d) < 5 && svatek(d)) sv.push(`${fmtDay(d)} ${svatek(d)}`);
+  const { y, svatky } = skolniRok();
   return `<section class="panel"><h2>Dny bez výuky</h2>
-    <p>Prázdniny a ředitelská volna. V těchto dnech se nedá rezervovat a stálý rozvrh se nepočítá do statistik. Státní svátky zná aplikace sama (nejbližší: ${esc(sv.join(', '))}).</p>
-    ${S.cfg.volno.length ? `<div class="scroll"><table class="t"><thead><tr><th>Název</th><th>Od</th><th>Do</th><th></th></tr></thead><tbody>${S.cfg.volno.slice().sort((a, b) => a.od.localeCompare(b.od)).map(v => `<tr><td><b>${esc(v.nazev)}</b></td><td>${fmtDay(v.od)} ${v.od.slice(0, 4)}</td><td>${fmtDay(v.do || v.od)} ${(v.do || v.od).slice(0, 4)}</td><td class="n"><button class="btn small danger" data-a="delVolno" data-id="${esc(v.id)}">Odebrat</button></td></tr>`).join('')}</tbody></table></div>` : ''}
-    <form class="rowform" data-s="volno"><div class="field"><label for="v-nazev">Název</label><input type="text" id="v-nazev" name="nazev" maxlength="40" placeholder="např. Podzimní prázdniny" required></div>
+    <p>Prázdniny a ředitelská volna. V těchto dnech se nedá rezervovat a stálý rozvrh se nepočítá do statistik.</p>
+    <div class="bar"><button class="btn primary" data-a="impOpen">Importovat z harmonogramu nebo CSV</button>${S.cfg.volno.length ? '<button class="btn danger small" data-a="delVolnoAll">Odebrat všechny</button>' : ''}</div>
+    ${S.cfg.volno.length ? `<div class="scroll"><table class="t"><thead><tr><th>Název</th><th>Od</th><th>Do</th><th></th></tr></thead><tbody>${S.cfg.volno.slice().sort((a, b) => a.od.localeCompare(b.od)).map(v => `<tr><td><b>${esc(v.nazev)}</b></td><td>${DNY[dow(v.od)].slice(0, 2).toLowerCase()} ${fmtFull(v.od)}</td><td>${DNY[dow(v.do || v.od)].slice(0, 2).toLowerCase()} ${fmtFull(v.do || v.od)}</td><td class="n"><button class="btn small danger" data-a="delVolno" data-id="${esc(v.id)}">Odebrat</button></td></tr>`).join('')}</tbody></table></div>` : '<p>Zatím žádné. Nejrychleji je naimportujete z harmonogramu školního roku.</p>'}
+    <h3>Přidat ručně</h3>
+    <form class="rowform" data-s="volno"><div class="field"><label for="v-nazev">Název</label><input type="text" id="v-nazev" name="nazev" maxlength="40" placeholder="např. Ředitelské volno" required></div>
       <div class="field narrow"><label for="v-od">Od</label><input type="date" id="v-od" name="od" required></div><div class="field narrow"><label for="v-do">Do</label><input type="date" id="v-do" name="do"></div>
-      <button class="btn primary" type="submit">Přidat</button></form></section>`;
+      <button class="btn" type="submit">Přidat</button></form></section>
+    <section class="panel"><h2>Státní svátky ve školním roce ${y}/${y + 1}</h2><p>Ty aplikace zná sama, nic se nezadává. Velikonoce počítá podle data Velikonoc v daném roce.</p>
+    <div class="scroll"><table class="t" style="max-width:560px"><tbody>${svatky.map(d => `<tr${dow(d) > 4 ? ' class="wkend"' : ''}><td>${DNY[dow(d)]}</td><td>${fmtFull(d)}</td><td><b>${esc(svatek(d))}</b>${dow(d) > 4 ? ' <small>(víkend, výuky se netýká)</small>' : ''}</td></tr>`).join('')}</tbody></table></div></section>`;
+}
+let IMP = [];
+// Rozumí CSV (Název;Od;Do), řádkům zkopírovaným z Wordu, Excelu nebo PDF harmonogramu
+// a zápisům rozsahů typu „29. - 30. 10. 2026“, „01. 07. - 31. 08. 2027“ nebo „23. 12. 2026 - 03. 01. 2027“.
+function parseVolno(text) {
+  const out = [], seen = new Set();
+  const mk = (d, m, y) => { const dt = new Date(y, m - 1, d, 12); return d > 0 && dt.getDate() === d && dt.getMonth() === m - 1 ? iso(dt) : null; };
+  for (const raw of String(text).split(/\r?\n/)) {
+    const line = raw.replace(/(\d{4})-(\d{1,2})-(\d{1,2})/g, (x, y, m, d) => `${Number(d)}. ${Number(m)}. ${y}`)
+      .replace(/(\d{1,2})\/(\d{1,2})\/(\d{4})/g, '$1. $2. $3').replace(/["\t;,]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const full = [...line.matchAll(/(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})/g)];
+    if (!full.length) continue;
+    const f0 = full[0], d0 = Number(f0[1]), m0 = Number(f0[2]), y0 = Number(f0[3]);
+    // začátek rozsahu před prvním úplným datem, např. „29. - “ nebo „01. 07. - “
+    const before = line.slice(0, f0.index), pre = before.match(/(\d{1,2}\.\s*(?:\d{1,2}\.\s*(?:\d{4}\s*)?)?)[-–—]\s*$/);
+    const nazev = before.slice(0, pre ? pre.index : before.length).replace(/[\s:\-–—]+$/, '').trim();
+    let od = null, doo = null;
+    if (full.length >= 2) { od = mk(d0, m0, y0); doo = mk(Number(full[1][1]), Number(full[1][2]), Number(full[1][3])); }
+    else {
+      doo = mk(d0, m0, y0);
+      if (pre) {
+        const n = (pre[1].match(/\d{1,4}/g) || []).map(Number);
+        if (n.length === 1) od = mk(n[0], m0, y0);
+        else if (n.length === 2) od = mk(n[0], n[1], n[1] > m0 ? y0 - 1 : y0);
+        else od = mk(n[0], n[1], n[2]);
+      } else od = doo;
+    }
+    if (!od || !doo || doo < od) continue;
+    const key = od + '|' + doo;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const jmeno = nazev || 'Bez názvu';
+    const uz = S.cfg.volno.some(v => v.od === od && (v.do || v.od) === doo);
+    out.push({ nazev: jmeno, od, do: doo, uz, navrh: !uz && /prázdnin|volno|svát/i.test(jmeno) });
+  }
+  return out;
+}
+function openImport() {
+  IMP = [];
+  openDlg(`<div class="dlg wide"><div><h2 id="dlg-title">Import dnů bez výuky</h2>
+    <p class="when">Vyberte soubor CSV, nebo zkopírujte tabulku z harmonogramu (Word, Excel, PDF) a vložte ji sem. Prázdniny a ředitelská volna se zaškrtnou samy, ostatní akce zůstanou nezaškrtnuté.</p></div>
+    <div class="field"><label for="imp-file">Soubor CSV</label><input type="file" id="imp-file" accept=".csv,.txt,text/csv,text/plain"><span class="hint">Formát: <code>Název;Od;Do</code>, např. <code>Podzimní prázdniny;29.10.2026;30.10.2026</code>. Diakritika funguje v UTF-8 i ve formátu, který ukládá český Excel.</span></div>
+    <div class="field"><label for="imp-text">Nebo vložte text</label><textarea id="imp-text" placeholder="Ředitelské volno	26. - 27. 10. 2026&#10;Podzimní prázdniny	29. - 30. 10. 2026"></textarea></div>
+    <div class="bar"><button type="button" class="btn" data-a="impRead">Načíst</button></div>
+    <div id="imp-prev"></div>
+    <div class="actions"><button type="button" class="btn" data-a="close">Zavřít</button><button type="button" class="btn primary" data-a="impDo" id="imp-do" disabled>Přidat vybrané</button></div></div>`);
+}
+function impParse(text) {
+  IMP = parseVolno(text);
+  const box = $('#imp-prev');
+  if (!IMP.length) { box.innerHTML = '<p class="err">V textu jsem nenašel žádná data. Zkontrolujte, že řádky obsahují datum, např. 29. 10. 2026.</p>'; $('#imp-do').disabled = true; return; }
+  box.innerHTML = `<div class="scroll"><table class="t"><thead><tr><th></th><th>Název</th><th>Od</th><th>Do</th><th>Stav</th></tr></thead><tbody>${IMP.map((v, i) => `<tr><td><input type="checkbox" id="imp-${i}" data-i="${i}"${v.navrh ? ' checked' : ''}${v.uz ? ' disabled' : ''}></td><td><label for="imp-${i}"><b>${esc(v.nazev)}</b></label></td><td>${fmtFull(v.od)}</td><td>${v.do === v.od ? '' : fmtFull(v.do)}</td><td><small>${v.uz ? 'už je v seznamu' : v.navrh ? 'prázdniny / volno' : 'jiná akce'}</small></td></tr>`).join('')}</tbody></table></div>`;
+  $('#imp-do').disabled = false;
+}
+async function readImpFile(file) {
+  if (!file) return;
+  const buf = await file.arrayBuffer();
+  let text;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch (e) { text = new TextDecoder('windows-1250').decode(buf); }
+  text = text.replace(/^\ufeff/, '');
+  $('#imp-text').value = text;
+  impParse(text);
 }
 function nastZarizeni() {
   return `<section class="panel"><h2>Zařízení</h2><p>Každé zařízení je jeden blok v rezervacích. Půjčuje se vždy celá sada. Vypnuté zařízení se v rezervacích nezobrazuje, ale jeho historie ve statistikách zůstane.</p>
@@ -1024,6 +1165,29 @@ const ACT = {
   slot(el) { openSlot(el.dataset.d, el.dataset.z, Number(el.dataset.h)); },
   close() { closeDlg(); },
   chip(el) { el.setAttribute('aria-pressed', el.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); },
+  multiOn() { const t = readTrida($('#dlg form')); BM.multi = true; BM.sel = [BM.h0]; BM.tridy = t ? { [BM.h0]: t } : {}; BM.active = nextActive(); renderHodiny(); },
+  multiOff() { const t = BM.tridy[BM.sel[0]] || ''; BM.multi = false; BM.h0 = BM.sel[0]; BM.when = `${zar(BM.z).nazev} · ${whenText(BM.d, BM.h0)}`; $('#dlg form').dataset.h = BM.h0; renderHodiny(); $('#f-tridy').innerHTML = chipsHtml(t); },
+  hourT(el) {
+    const h = Number(el.dataset.h);
+    if (BM.sel.includes(h)) { if (BM.sel.length === 1) return; BM.sel = BM.sel.filter(x => x !== h); delete BM.tridy[h]; }
+    else BM.sel = BM.sel.concat(h).sort((a, b) => a - b);
+    BM.active = nextActive(); renderHodiny();
+  },
+  hourAll() { BM.sel = S.cfg.hodiny.map(x => x.c).filter(c => slotInfo(BM.d, BM.z, c, S.idx).kind === 'free'); BM.active = nextActive(); renderHodiny(); },
+  chipM(el) { if (!BM.active) return; BM.tridy[BM.active] = el.textContent.trim(); BM.active = nextActive(); renderTridyM(); },
+  rowM(el) { BM.active = Number(el.dataset.h); renderTridyM(); },
+  jinaM() { const v = $('#f-jina').value.trim(); if (!v || !BM.active) return; BM.tridy[BM.active] = v; BM.active = nextActive(); renderTridyM(); },
+  impOpen() { openImport(); },
+  impRead() { impParse($('#imp-text').value); },
+  impDo() {
+    const pick = [...document.querySelectorAll('#imp-prev input[type=checkbox]:checked')].map(c => IMP[Number(c.dataset.i)]);
+    if (!pick.length) return toast('Nic není zaškrtnuté.', true);
+    run(async () => { await saveCfg(c => { for (const v of pick) c.volno.push({ id: 'v' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), nazev: v.nazev, od: v.od, do: v.do }); }); closeDlg(); render(); toast(`Přidáno ${pick.length} období bez výuky.`); });
+  },
+  delVolnoAll(el) {
+    if (!el.dataset.armed) { el.dataset.armed = '1'; el.textContent = 'Opravdu odebrat všechny?'; return; }
+    run(async () => { await saveCfg(c => { c.volno = []; }); render(); toast('Seznam dnů bez výuky je prázdný.'); });
+  },
   cancelRes(el) {
     if (!el.dataset.armed) { el.dataset.armed = '1'; el.textContent = 'Opravdu zrušit?'; return; }
     run(async () => { await store.remove(el.dataset.id); closeDlg(); await refresh(); render(); toast('Rezervace je zrušená, čas je zase volný.'); });
@@ -1108,6 +1272,7 @@ async function runSetup() {
 
 const SUB = {
   async book(f) {
+    if (BM && BM.multi && !f.dataset.id) return bookMulti(f);
     const { d, z, id } = f.dataset, h = Number(f.dataset.h);
     const trida = readTrida(f), pozn = f.querySelector('#f-pozn').value.trim();
     const pi = f.querySelector('input#f-prijmeni'), prijmeni = pi ? pi.value.trim() : S.user.prijmeni;
@@ -1192,6 +1357,7 @@ document.addEventListener('click', e => {
   const fn = ACT[el.dataset.a];
   if (fn) fn(el, e);
 });
+document.addEventListener('change', e => { if (e.target.id === 'imp-file') run(() => readImpFile(e.target.files[0])); });
 document.addEventListener('submit', e => {
   e.preventDefault();
   const fn = SUB[e.target.dataset.s];
