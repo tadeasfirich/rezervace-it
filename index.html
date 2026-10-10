@@ -711,7 +711,8 @@ const LOCK = '<svg class="lock" viewBox="0 0 16 16" aria-hidden="true"><path d="
 
 function renderChrome() {
   const ready = !S.screen && S.cfg;
-  const items = [['rezervace', 'Rezervace'], ['statistiky', 'Statistiky']].concat(S.admin ? [['nastaveni', 'Nastavení']] : [], [['navod', 'Návod']]);
+  // Statistiky a nastavení vidí jen správci – učitelé se nemají cítit sledovaní.
+  const items = [['rezervace', 'Rezervace']].concat(S.admin ? [['statistiky', 'Statistiky'], ['nastaveni', 'Nastavení']] : [], [['navod', 'Návod']]);
   $('#nav').innerHTML = ready ? items.map(i => `<button data-a="view" data-v="${i[0]}"${S.view === i[0] ? ' aria-current="page"' : ''}>${i[1]}</button>`).join('') : '';
   $('#userbox').innerHTML = S.user ? `<button class="user" data-a="user" title="${esc(S.user.jmeno)}"><i class="dot"></i><b>${esc(S.user.prijmeni)}</b>${S.admin ? '<small>správce</small>' : ''}</button>` : '';
   const demo = $('#demo');
@@ -725,7 +726,7 @@ function render() {
   renderChrome();
   const m = $('#main');
   if (S.screen) { m.innerHTML = S.screen(); return; }
-  if (S.view === 'nastaveni' && !S.admin) S.view = 'rezervace';
+  if ((S.view === 'nastaveni' || S.view === 'statistiky') && !S.admin) S.view = 'rezervace';
   m.innerHTML = ({ rezervace: viewRez, statistiky: viewStat, nastaveni: viewNast, navod: viewNavod }[S.view])();
 }
 
@@ -1151,7 +1152,7 @@ const screenError = (title, e) => () => `<div class="center"><section class="pan
 
 /* ---------- akce ---------- */
 const ACT = {
-  view(el) { S.view = el.dataset.v; render(); if (S.view === 'statistiky') run(async () => { await loadStats(); render(); }); },
+  view(el) { S.view = el.dataset.v; render(); if (S.view === 'statistiky' && S.admin) run(async () => { await loadStats(); render(); }); },
   week(el) {
     S.week = Math.min(1, Number(el.dataset.off));
     render();
