@@ -727,6 +727,7 @@ function render() {
   const m = $('#main');
   if (S.screen) { m.innerHTML = S.screen(); return; }
   if ((S.view === 'nastaveni' || S.view === 'statistiky') && !S.admin) S.view = 'rezervace';
+  if (!S.admin && S.week < 0) S.week = 0;
   m.innerHTML = ({ rezervace: viewRez, statistiky: viewStat, nastaveni: viewNast, navod: viewNavod }[S.view])();
 }
 
@@ -736,10 +737,10 @@ function viewRez() {
   const wk = (off, label) => `<button class="week" data-a="week" data-off="${off}" aria-pressed="${S.week === off}"><b>${label}</b><span>${fmtRange(addDays(base, 7 * off))}</span></button>`;
   let h = `<div class="bar">
     <div class="weeks">${wk(0, vikend ? 'Nadcházející týden' : 'Tento týden')}${wk(1, vikend ? 'Týden poté' : 'Příští týden')}</div>
-    <button class="btn ghost small" data-a="week" data-off="${Math.min(S.week, 0) - 1}">‹ Starší týdny</button>
+    ${S.admin ? `<button class="btn ghost small" data-a="week" data-off="${Math.min(S.week, 0) - 1}">‹ Starší týdny</button>` : ''}
     <div class="legend"><span><i></i>volno – klikněte</span><span><i class="l-res"></i>obsazeno</span><span><i class="l-mine"></i>můj zápis</span><span>${LOCK.replace('class="lock"', '')}stálý rozvrh</span></div>
   </div>`;
-  if (S.week < 0) h += `<div class="note"><b>Archiv: týden ${fmtRange(mon)}</b><span>${S.admin ? 'Jako správce tu můžete zápisy opravit.' : 'Jen ke čtení.'}</span>
+  if (S.week < 0) h += `<div class="note"><b>Archiv: týden ${fmtRange(mon)}</b><span>Archiv vidí jen správci a mohou v něm zápisy opravit.</span>
     <button class="btn small" data-a="week" data-off="${S.week + 1}">Novější ›</button><button class="btn small" data-a="week" data-off="0">Zpět na tento týden</button></div>`;
   const act = aktivni();
   if (act.length > 1) h += `<div class="jump">${act.map(z => `<a class="c-${esc(z.barva)}" href="#z-${esc(z.id)}" data-a="jump" data-z="${esc(z.id)}">${esc(z.nazev)}</a>`).join('')}</div>`;
@@ -1131,7 +1132,7 @@ function viewNavod() {
       <li>Zapisuje se dopředu, ne až po hodině. Dny, které už proběhly, se zamknou.</li>
       <li>Když hodinu zrušíte, klikněte na svůj zápis a dejte <b>Zrušit rezervaci</b>, ať si vybavení může vzít někdo jiný.</li>
       <li>Půjčuje se vždy celá sada (celý vozík). Když berete jen část, napište počet kusů do poznámky.</li>
-      <li>Na konci týdne se týden sám uloží do archivu a přibude nový. Nic se nemusí kopírovat.</li></ol></section>`;
+      <li>Vidíte vždy nadcházející týden a týden po něm. O víkendu se tabulka sama posune o týden dál, nic se nemusí kopírovat.</li></ol></section>`;
 }
 
 /* ---------- obrazovky před vstupem (jen po nasazení) ---------- */
@@ -1154,7 +1155,8 @@ const screenError = (title, e) => () => `<div class="center"><section class="pan
 const ACT = {
   view(el) { S.view = el.dataset.v; render(); if (S.view === 'statistiky' && S.admin) run(async () => { await loadStats(); render(); }); },
   week(el) {
-    S.week = Math.min(1, Number(el.dataset.off));
+    // Do archivu smí jen správce, učitelé vidí jen dva aktuální týdny.
+    S.week = Math.max(S.admin ? -Infinity : 0, Math.min(1, Number(el.dataset.off)));
     render();
     if (!S.weeks[addDays(baseMonday(), 7 * S.week)]) run(async () => { await refresh(); render(); });
   },
